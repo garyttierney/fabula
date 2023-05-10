@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::function::{CallContext, CallError, Library};
-use crate::model::{Node, NodeError, OpCode, Operands, Value, ValueError};
+use crate::model::{Node, NodeError, OpCode, Operand, Operands, Value, ValueError};
 use crate::story::Story;
 use crate::variables::VariableStore;
 
@@ -111,6 +111,9 @@ pub enum StoryRunnerError {
     #[error("error while decoding instructions, illegal opcode: {0}")]
     InvalidInstruction(i32),
 
+    #[error("instruction is no longer supported: {0:#?}")]
+    UnsupportedInstruction(OpCode),
+
     #[error("error while calling function")]
     FunctionCall(#[from] CallError),
 
@@ -124,10 +127,186 @@ pub struct StoryRunner {
     library: Library,
 }
 
+#[allow(dead_code)]
+enum ControlFlow<'a> {
+    Next,
+    Jump(&'a Node, usize),
+}
+
 impl StoryRunner {
     #[must_use]
     pub const fn new(library: Library) -> Self {
         Self { library }
+    }
+
+    fn execute<'s, V>(
+        &'s self,
+        story: &'s Story,
+        node: &'s Node,
+        opcode: OpCode,
+        operands: &'s Vec<Operand>,
+        stack: &mut EvaluationStack,
+        variables: &mut V,
+    ) -> Result<(ControlFlow, Option<StoryEvent>), StoryRunnerError>
+    where
+        V: VariableStore,
+    {
+        return match opcode {
+            OpCode::JumpTo => {
+                let label_name = operands.at::<String>(0)?;
+                let label_offset = node.resolve_label(&label_name)?;
+
+                Ok((ControlFlow::Jump(node, label_offset), None))
+            }
+            OpCode::Jump => {
+                let label_name = stack.pop::<String>()?;
+                let label_offset = node.resolve_label(&label_name)?;
+
+                Ok((ControlFlow::Jump(node, label_offset), None))
+            }
+            OpCode::RunLine => {
+                let key = operands.at::<String>(0)?;
+
+                let substitutions = if operands.len() > 1 {
+                    let expression_count = operands.at::<f32>(1)? as usize;
+                    let mut substitutions = Vec::with_capacity(expression_count);
+
+                    for index in (0..expression_count).rev() {
+                        substitutions[index] = stack.pop::<String>()?;
+                    }
+
+                    substitutions
+                } else {
+                    vec![]
+                };
+
+                Ok((
+                    ControlFlow::Next,
+                    Some(StoryEvent::ShowLine { key, substitutions }),
+                ))
+            }
+            OpCode::RunCommand => {
+                todo!()
+            }
+            OpCode::AddOption => {
+                let key = operands.at::<String>(0)?;
+                let target = operands.at::<String>(1)?;
+
+                let substitutions = if operands.len() > 2 {
+                    let expression_count = operands.at::<f32>(2)? as usize;
+                    let mut substitutions = Vec::with_capacity(expression_count);
+
+                    for index in (0..expression_count).rev() {
+                        substitutions[index] = stack.pop::<String>()?;
+                    }
+
+                    substitutions
+                } else {
+                    vec![]
+                };
+
+                let enabled = if operands.len() > 3 && operands.at::<bool>(3)? {
+                    stack.pop()?
+                } else {
+                    true
+                };
+
+                Ok((
+                    ControlFlow::Next,
+                    Some(StoryEvent::AddOption {
+                        enabled,
+                        key,
+                        substitutions,
+                        target,
+                    }),
+                ))
+            }
+            OpCode::ShowOptions => Ok((ControlFlow::Next, Some(StoryEvent::ShowOptions))),
+            OpCode::PushString => {
+                stack.push(operands.at::<String>(0)?);
+                Ok((ControlFlow::Next, None))
+            }
+            OpCode::PushFloat => {
+                stack.push(operands.at::<f32>(0)?);
+                Ok((ControlFlow::Next, None))
+            }
+            OpCode::PushBool => {
+                stack.push(operands.at::<bool>(0)?);
+                Ok((ControlFlow::Next, None))
+            }
+            OpCode::PushNull => {
+                return Err(StoryRunnerError::UnsupportedInstruction(opcode));
+            }
+            OpCode::JumpIfFalse => {
+                let condition = stack.peek::<bool>()?;
+                let flow = if !condition {
+                    let target_name = operands.at::<String>(0)?;
+                    let target = node.resolve_label(&target_name)?;
+
+                    ControlFlow::Jump(node, target)
+                } else {
+                    ControlFlow::Next
+                };
+
+                Ok((flow, None))
+            }
+            OpCode::Pop => {
+                let _ = stack.pop_any()?;
+                Ok((ControlFlow::Next, None))
+            }
+            OpCode::CallFunc => {
+                let name = operands.at::<String>(0)?;
+                let parameter_count = stack.pop::<f32>()? as usize;
+                let mut parameters = Vec::with_capacity(parameter_count);
+
+                for _ in 0..parameter_count {
+                    parameters.push(stack.pop_any()?);
+                }
+
+                parameters.reverse();
+
+                let cx = CallContext {
+                    node,
+                    story,
+                    variables,
+                };
+
+                if let Some(return_value) = self.library.call(name, cx, parameters)? {
+                    stack.push(return_value);
+                }
+
+                Ok((ControlFlow::Next, None))
+            }
+            OpCode::PushVariable => {
+                let var_name = operands.at::<String>(0)?;
+                let var_value = variables
+                    .get(&var_name)
+                    .or_else(|| story.initial_value(&var_name));
+
+                if let Some(value) = var_value {
+                    stack.push(value.clone());
+                } else {
+                    panic!("TODO: raise StoryRunnerError for missing default value")
+                }
+
+                Ok((ControlFlow::Next, None))
+            }
+            OpCode::StoreVariable => {
+                let value = stack.peek_any()?;
+                let var_name = operands.at::<String>(0)?;
+
+                variables.set(&var_name, value);
+
+                Ok((ControlFlow::Next, None))
+            }
+            OpCode::Stop => Ok((ControlFlow::Next, Some(StoryEvent::Complete))),
+            OpCode::RunNode => {
+                let node_name = stack.pop::<String>()?;
+                let new_node = story.node(node_name).unwrap();
+
+                Ok((ControlFlow::Jump(new_node, 0), None))
+            }
+        };
     }
 
     /// Advance the story forward from the given [checkpoint].
@@ -144,171 +323,21 @@ impl StoryRunner {
         } = checkpoint;
 
         loop {
-            let prev_pc = pc;
             let instruction = &node.instructions[pc];
             let operands = &instruction.operands;
-
             let opcode = OpCode::from_i32(instruction.opcode)
                 .ok_or(StoryRunnerError::InvalidInstruction(instruction.opcode))?;
 
-            eprintln!(
-                "{}: {:?} ops={:?} stack={:?}",
-                pc, opcode, operands, stack.0
-            );
+            let (flow, event) =
+                self.execute(story, node, opcode, operands, &mut stack, variables)?;
 
-            match opcode {
-                OpCode::JumpTo => {
-                    let label_name = operands.at::<String>(0)?;
-                    let label_offset = node.resolve_label(&label_name)?;
+            (node, pc) = match flow {
+                ControlFlow::Next => (node, pc + 1),
+                ControlFlow::Jump(node, target) => (node, target),
+            };
 
-                    pc = label_offset;
-                }
-                OpCode::Jump => {
-                    let label_name = stack.pop::<String>()?;
-                    let label_offset = node.resolve_label(&label_name)?;
-
-                    pc = label_offset;
-                }
-                OpCode::RunLine => {
-                    let key = operands.at::<String>(0)?;
-
-                    let substitutions = if operands.len() > 1 {
-                        let expression_count = operands.at::<f32>(1)? as usize;
-                        let mut substitutions = Vec::with_capacity(expression_count);
-
-                        for index in (0..expression_count).rev() {
-                            substitutions[index] = stack.pop::<String>()?;
-                        }
-
-                        substitutions
-                    } else {
-                        vec![]
-                    };
-
-                    pc += 1;
-
-                    return Ok((
-                        StoryCheckpoint::at(node, pc, stack),
-                        StoryEvent::ShowLine { key, substitutions },
-                    ));
-                }
-                OpCode::RunCommand => {
-                    todo!()
-                }
-                OpCode::AddOption => {
-                    let key = operands.at::<String>(0)?;
-                    let target = operands.at::<String>(1)?;
-
-                    let substitutions = if operands.len() > 2 {
-                        let expression_count = operands.at::<f32>(2)? as usize;
-                        let mut substitutions = Vec::with_capacity(expression_count);
-
-                        for index in (0..expression_count).rev() {
-                            substitutions[index] = stack.pop::<String>()?;
-                        }
-
-                        substitutions
-                    } else {
-                        vec![]
-                    };
-
-                    let enabled = if operands.len() > 3 && operands.at::<bool>(3)? {
-                        stack.pop()?
-                    } else {
-                        true
-                    };
-
-                    pc += 1;
-
-                    return Ok((
-                        StoryCheckpoint::at(node, pc, stack),
-                        StoryEvent::AddOption {
-                            enabled,
-                            key,
-                            substitutions,
-                            target,
-                        },
-                    ));
-                }
-                OpCode::ShowOptions => {
-                    pc += 1;
-
-                    return Ok((
-                        StoryCheckpoint::at(node, pc, stack),
-                        StoryEvent::ShowOptions,
-                    ));
-                }
-                OpCode::PushString => stack.push(operands.at::<String>(0)?),
-                OpCode::PushFloat => stack.push(operands.at::<f32>(0)?),
-                OpCode::PushBool => stack.push(operands.at::<bool>(0)?),
-                OpCode::PushNull => {
-                    todo!()
-                }
-                OpCode::JumpIfFalse => {
-                    let condition = stack.peek::<bool>()?;
-                    if !condition {
-                        let target_name = operands.at::<String>(0)?;
-                        let target = node.resolve_label(&target_name)?;
-
-                        pc = target;
-                    }
-                }
-                OpCode::Pop => {
-                    let _ = stack.pop_any()?;
-                }
-                OpCode::CallFunc => {
-                    let name = operands.at::<String>(0)?;
-                    let parameter_count = stack.pop::<f32>()? as usize;
-                    let mut parameters = Vec::with_capacity(parameter_count);
-
-                    for _ in 0..parameter_count {
-                        parameters.push(stack.pop_any()?);
-                    }
-
-                    parameters.reverse();
-
-                    let cx = CallContext {
-                        node,
-                        story,
-                        variables,
-                    };
-
-                    if let Some(return_value) = self.library.call(name, cx, parameters)? {
-                        stack.push(return_value);
-                    }
-                }
-                OpCode::PushVariable => {
-                    let var_name = operands.at::<String>(0)?;
-                    let var_value = variables
-                        .get(&var_name)
-                        .or_else(|| story.initial_value(&var_name));
-
-                    if let Some(value) = var_value {
-                        stack.push(value.clone());
-                    } else {
-                        panic!("TODO: raise StoryRunnerError for missing default value")
-                    }
-                }
-                OpCode::StoreVariable => {
-                    let value = stack.peek_any()?;
-                    let var_name = operands.at::<String>(0)?;
-
-                    variables.set(&var_name, value);
-                }
-                OpCode::Stop => {
-                    return Ok((StoryCheckpoint::at(node, pc, stack), StoryEvent::Complete))
-                }
-                OpCode::RunNode => {
-                    let node_name = stack.pop::<String>()?;
-                    let new_node = story.node(node_name).unwrap();
-
-                    node = new_node;
-                    pc = 0;
-                }
-            }
-
-            if prev_pc == pc {
-                pc += 1;
+            if let Some(event) = event {
+                return Ok((StoryCheckpoint::at(node, pc, stack), event));
             }
         }
     }
