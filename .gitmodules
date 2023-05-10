@@ -1,0 +1,3 @@
+[submodule "third-party/yarn-spinner"]
+	path = third-party/yarn-spinner
+	url = https://github.com/YarnSpinnerTool/YarnSpinner

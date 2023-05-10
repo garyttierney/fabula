@@ -1,0 +1,17 @@
+id,text,file,node,lineNumber
+line:794945,"Player: Hey, Sally.",/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally,12
+line:2dc39b,Sally: Oh! Hi.,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally,13
+line:34de2f,Sally: You snuck up on me.,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally,14
+line:dcc2bc,Sally: Don't do that.,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally,15
+line:a8e70c,Player: Hey.,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally,17
+line:305cde,Sally: Hi.,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally,18
+line:5d7a7c,[[Anything exciting happen on your watch?|Sally.Watch]],/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally,22
+line:0a7e39,[[Sorry about the console.|Sally.Sorry]],/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally,26
+line:0facf7,[[See you later.|Sally.Exit]],/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally,28
+line:8c3f98,Sally: Not really.,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally.Watch,36
+line:24c418,"Sally: Same old nebula, doing the same old thing.",/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally.Watch,37
+line:df4eaf,"Sally: Oh, Ship wanted to see you. Go say hi to it.",/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally.Watch,38
+line:1fea6c,Player: Already done!,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally.Watch,41
+line:5df323,Sally: Go say hi again.,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally.Watch,42
+line:60c282,Sally: Bye.,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally.Exit,51
+line:d7df49,Sally: Yeah. Don't do it again.,/home/gtierney/RiderProjects/YarnSpinner-Console/input.yarn,Sally.Sorry,59
