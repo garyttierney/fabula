@@ -17,6 +17,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - uses: actions/cache@v3
         with:
           path: |
@@ -39,6 +41,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - uses: actions/cache@v3
         with:
           path: |
@@ -80,7 +84,9 @@ jobs:
     timeout-minutes: 30
     needs: ci
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v3 
+        with:
+          submodules: recursive
       - uses: actions/cache@v3
         with:
           path: |
