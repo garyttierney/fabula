@@ -70,6 +70,8 @@ jobs:
         # To run the tests one item at a time for troubleshooting, use
         # cargo --quiet test --lib -- --list | sed 's/: test$//' | MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-permissive-provenance -Zmiri-disable-weak-memory-emulation" xargs -n1 cargo miri test -p bevy_ecs --lib -- --exact
         run: cargo miri test
+        env:
+          MIRIFLAGS: "-Zmiri-disable-isolation"
 
   markdownlint:
     runs-on: ubuntu-latest
