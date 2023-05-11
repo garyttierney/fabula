@@ -80,6 +80,12 @@ impl Builder {
         self
     }
 
+    /// Create a [`Story`] from the Yarn [`Program`]s added to this builder.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if a program could not be loaded or combining all
+    /// available programs would result in conflicts/ambiguities.
     pub fn build(self) -> Result<Story, BuilderError> {
         fn merge<V>(
             dest: &mut HashMap<String, V>,

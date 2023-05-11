@@ -1,4 +1,5 @@
 use std::{collections::HashMap, marker::PhantomData};
+use std::any::type_name;
 
 use thiserror::Error;
 
@@ -35,16 +36,21 @@ impl Library {
         library
     }
 
+    /// Call a function with the given [`name`] and [`args`].
+    ///
+    /// # Errors
+    /// - [`CallError::UnknownFunction`] if there is no function with the given name.
+    /// - [`CallError::InvalidArguments`] if the arguments passed do not match the call signature.
     pub fn call(
         &self,
         name: String,
         context: CallContext,
         args: Vec<Value>,
-    ) -> Result<Option<Value>, CallError> {
+    ) -> Result<Value, CallError> {
         self.functions
             .get(&name)
             .map_or(Err(CallError::UnknownFunction(name)), |function| {
-                Ok(function.call(context, args))
+                function.call(context, args)
             })
     }
 
@@ -70,19 +76,25 @@ impl Default for Library {
 
 #[derive(Error, Debug)]
 pub enum CallError {
-    #[error("no function found named '{0}")]
+    #[error("no function found named '{0}'")]
     UnknownFunction(String),
+
+    #[error("invalid argument type, expected {0}, found {1:?}")]
+    InvalidArguments(&'static str, Value),
+
+    #[error("invalid argument count, expected {0}, found {1}")]
+    InvalidArgumentCount(usize, usize)
 }
 
 /// A function that can be registered with and called by scripts running in the Yarn runtime.
 pub trait Function<Ty> {
     type Return: Into<Value>;
 
-    fn call(&self, context: CallContext, args: Vec<Value>) -> Option<Value>;
+    fn call(&self, context: CallContext, args: Vec<Value>) -> Result<Value, CallError>;
 }
 
 pub trait UntypedFunction {
-    fn call(&self, context: CallContext, args: Vec<Value>) -> Option<Value>;
+    fn call(&self, context: CallContext, args: Vec<Value>) -> Result<Value, CallError>;
 }
 
 pub struct FunctionHandle<S, F>
@@ -97,7 +109,7 @@ impl<S, F> UntypedFunction for FunctionHandle<S, F>
 where
     F: Function<S>,
 {
-    fn call(&self, context: CallContext, args: Vec<Value>) -> Option<Value> {
+    fn call(&self, context: CallContext, args: Vec<Value>) -> Result<Value, CallError> {
         self.function.call(context, args)
     }
 }
@@ -106,6 +118,11 @@ pub struct CallContext<'r> {
     pub node: &'r Node,
     pub story: &'r Story,
     pub variables: &'r mut dyn VariableStore,
+}
+
+macro_rules! param_count {
+    () => {0};
+    ($head: tt $($tail:tt)*) => { 1 + param_count!($($tail)*) }; 
 }
 
 // https://github.com/yarn-slinger/yarn-slinger/blob/6b74f8d3b9d5caace05240ba1bf737dff2035b1f/crates/core/src/yarn_fn/function_wrapping.rs#L21
@@ -121,20 +138,20 @@ macro_rules! impl_function {
             type Return = R;
 
             #[allow(non_snake_case)]
-            fn call(&self, context: CallContext, args: Vec<Value>) -> Option<Value> {
-                   let [$($param,)*] = &args[..] else {
-                        panic!("Wrong number of arguments")
+            fn call(&self, context: CallContext, args: Vec<Value>) -> Result<Value, CallError> {
+                    let [$($param,)*] = &args[..] else {
+                       return Err(CallError::InvalidArgumentCount(param_count!($($param)*), args.len()));
                     };
 
                     let input = (
                         $($param
                             .clone()
                             .try_into()
-                            .unwrap_or_else(|_| panic!("Failed to convert")),
+                            .or_else(|_| Err(CallError::InvalidArguments(type_name::<$param>(), $param.clone())))?,
                         )*
                     );
                     let ($($param,)*) = input;
-                    Some(self(context, $($param,)*).into())
+                    Ok(self(context, $($param,)*).into())
             }
         }
     };

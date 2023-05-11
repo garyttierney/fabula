@@ -9,8 +9,8 @@ pub use proto::{instruction::*, operand::*, *};
 
 #[derive(Error, Debug)]
 pub enum ValueError {
-    #[error("unexpected type")]
-    UnexpectedType,
+    #[error("unexpected type, found {1:?}, expected {0}")]
+    UnexpectedType(&'static str, Value),
 
     #[error("no value given")]
     Missing,
@@ -24,7 +24,7 @@ macro_rules! value_conversion {
             fn try_from(value: Value) -> Result<$ty, Self::Error> {
                 match value {
                     $name(value) => Ok(value),
-                    _ => Err(ValueError::UnexpectedType),
+                    _ => Err(ValueError::UnexpectedType(stringify!($name), value.clone())),
                 }
             }
         }
@@ -37,7 +37,24 @@ macro_rules! value_conversion {
     };
 }
 
-value_conversion!(Value::StringValue, String);
+impl From<String> for Value {
+    fn from(value: String) -> Self {
+        Value::StringValue(value)
+    }
+}
+
+impl TryFrom<Value> for String {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::StringValue(value) => Ok(value),
+            Value::FloatValue(value) => Ok(format!("{}", value)),
+            Value::BoolValue(value) => Ok(format!("{}", value)),
+        }
+    }
+}
+
 value_conversion!(Value::BoolValue, bool);
 value_conversion!(Value::FloatValue, f32);
 

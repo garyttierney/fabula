@@ -1,3 +1,6 @@
 [submodule "third-party/yarn-spinner"]
 	path = third-party/yarn-spinner
 	url = https://github.com/YarnSpinnerTool/YarnSpinner
+[submodule "third-party/ysc"]
+	path = third-party/ysc
+	url = https://github.com/YarnSpinnerTool/YarnSpinner-Console

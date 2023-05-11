@@ -1,4 +1,6 @@
-#![warn(clippy::all)]
+#![warn(clippy::all, clippy::missing_errors_doc, clippy::missing_safety_doc)]
+#![deny(clippy::panic)]
+
 pub mod function;
 pub mod model;
 pub mod runner;
