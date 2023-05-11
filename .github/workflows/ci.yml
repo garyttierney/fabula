@@ -33,6 +33,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Compile Yarn scripts
+        run: |
+          root=$(pwd)
+          pushd third-party/ysc
+          for plan in $root/third-party/yarn-spinner/Tests/TestCases/*.testplan; do
+            dotnet run --project src/YarnSpinner.Console/ysc.csproj compile -o $root/third-party/yarn-spinner/Tests/TestCases "$plan"
+          done
+          popd
       - name: CI job
         run: cargo test
 
